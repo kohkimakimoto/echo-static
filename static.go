@@ -2,6 +2,7 @@ package static
 
 import (
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	assetfs "github.com/elazarl/go-bindata-assetfs"
@@ -26,36 +27,47 @@ func (b *binaryFileSystem) Exists(prefix string, filepath string) bool {
 	return false
 }
 
-func Static(urlPrefix string, afs *assetfs.AssetFS, fallbackHandler echo.HandlerFunc) echo.MiddlewareFunc {
+type StaticConfig struct {
+	UrlPrefix string
+	AssetFS   *assetfs.AssetFS
+	Index     string
+}
+
+func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
+	afs := config.AssetFS
+	urlPrefix := config.UrlPrefix
+
 	fs := &binaryFileSystem{afs}
 	fileserver := http.FileServer(fs)
 	if urlPrefix != "" {
 		fileserver = http.StripPrefix(urlPrefix, fileserver)
 	}
 
-	return func(before echo.HandlerFunc) echo.HandlerFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			err := before(c)
-			if err != nil {
-				if c, ok := err.(*echo.HTTPError); !ok || c.Code != http.StatusNotFound {
-					return err
-				}
-			}
-
-			if c.Response().Committed {
-				// already sent response
-				return nil
-			}
-
 			w, r := c.Response(), c.Request()
 			if fs.Exists(urlPrefix, r.URL.Path) {
 				fileserver.ServeHTTP(w, r)
 				return nil
-			} else if fallbackHandler != nil {
-				return fallbackHandler(c)
 			}
 
-			return err
+			if config.Index != "" {
+				index := filepath.Join(r.URL.Path, config.Index)
+				if fs.Exists(urlPrefix, index) {
+					fileserver.ServeHTTP(w, r)
+					return nil
+				}
+			}
+			return next(c)
 		}
 	}
+}
+
+func Static(urlPrefix string, afs *assetfs.AssetFS) echo.MiddlewareFunc {
+	c := StaticConfig{}
+	c.UrlPrefix = urlPrefix
+	c.AssetFS = afs
+	c.Index = "index.html"
+
+	return StaticWithConfig(c)
 }
