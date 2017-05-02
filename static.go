@@ -17,20 +17,11 @@ func (b *binaryFileSystem) Open(name string) (http.File, error) {
 	return b.fs.Open(name)
 }
 
-func (b *binaryFileSystem) Exists(prefix string, filepath string) bool {
-	if p := strings.TrimPrefix(filepath, prefix); len(p) < len(filepath) {
-		if _, err := b.Open(p); err != nil {
-			return false
-		}
-		return true
-	}
-	return false
-}
-
 type StaticConfig struct {
 	UrlPrefix string
 	AssetFS   *assetfs.AssetFS
 	Skipper   middleware.Skipper
+	Browse    bool
 }
 
 func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
@@ -54,9 +45,23 @@ func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
 			}
 
 			w, r := c.Response(), c.Request()
-			if fs.Exists(urlPrefix, r.URL.Path) {
-				fileserver.ServeHTTP(w, r)
-				return nil
+			filepath := r.URL.Path
+
+			if p := strings.TrimPrefix(filepath, urlPrefix); len(p) < len(filepath) {
+				httpFile, err := fs.Open(p)
+				if err == nil {
+					fi, _ := httpFile.Stat()
+					if fi.IsDir() {
+						if config.Browse {
+							fileserver.ServeHTTP(w, r)
+							return nil
+						}
+						return next(c)
+					}
+
+					fileserver.ServeHTTP(w, r)
+					return nil
+				}
 			}
 
 			return next(c)
