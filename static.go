@@ -2,7 +2,6 @@ package static
 
 import (
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	assetfs "github.com/elazarl/go-bindata-assetfs"
@@ -30,7 +29,6 @@ func (b *binaryFileSystem) Exists(prefix string, filepath string) bool {
 type StaticConfig struct {
 	UrlPrefix string
 	AssetFS   *assetfs.AssetFS
-	Index     string
 }
 
 func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
@@ -51,13 +49,6 @@ func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
 				return nil
 			}
 
-			if config.Index != "" {
-				index := filepath.Join(r.URL.Path, config.Index)
-				if fs.Exists(urlPrefix, index) {
-					fileserver.ServeHTTP(w, r)
-					return nil
-				}
-			}
 			return next(c)
 		}
 	}
@@ -67,7 +58,6 @@ func Static(urlPrefix string, afs *assetfs.AssetFS) echo.MiddlewareFunc {
 	c := StaticConfig{}
 	c.UrlPrefix = urlPrefix
 	c.AssetFS = afs
-	c.Index = "index.html"
 
 	return StaticWithConfig(c)
 }
