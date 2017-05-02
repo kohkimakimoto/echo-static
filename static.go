@@ -6,6 +6,7 @@ import (
 
 	assetfs "github.com/elazarl/go-bindata-assetfs"
 	"github.com/labstack/echo"
+	"github.com/labstack/echo/middleware"
 )
 
 type binaryFileSystem struct {
@@ -29,11 +30,16 @@ func (b *binaryFileSystem) Exists(prefix string, filepath string) bool {
 type StaticConfig struct {
 	UrlPrefix string
 	AssetFS   *assetfs.AssetFS
+	Skipper   middleware.Skipper
 }
 
 func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
 	afs := config.AssetFS
 	urlPrefix := config.UrlPrefix
+
+	if config.Skipper == nil {
+		config.Skipper = middleware.DefaultSkipper
+	}
 
 	fs := &binaryFileSystem{afs}
 	fileserver := http.FileServer(fs)
@@ -43,6 +49,10 @@ func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			if config.Skipper(c) {
+				return next(c)
+			}
+
 			w, r := c.Response(), c.Request()
 			if fs.Exists(urlPrefix, r.URL.Path) {
 				fileserver.ServeHTTP(w, r)
@@ -58,6 +68,7 @@ func Static(urlPrefix string, afs *assetfs.AssetFS) echo.MiddlewareFunc {
 	c := StaticConfig{}
 	c.UrlPrefix = urlPrefix
 	c.AssetFS = afs
+	c.Skipper = middleware.DefaultSkipper
 
 	return StaticWithConfig(c)
 }
